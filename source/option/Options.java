@@ -94,7 +94,7 @@ public class Options {
 					return new WorkingOption<>(field, parser, ln, sn, field.getAnnotation(Default.class));
 				}).toList();
 
-			var byLong = all.stream().collect(Collectors.toMap(o -> o.name, Function.identity()));
+			var byLong = all.stream().filter(option -> Objects.nonNull(option.name)).collect(Collectors.toMap(o -> o.name, Function.identity()));
 			var byShort = all.stream().filter(o -> o.character != 0).collect(Collectors.toMap(o -> o.character, Function.identity()));
 			var options = new LinkedHashSet<WorkingOption>();
 			var notFound = new LinkedHashSet<String>();
@@ -235,7 +235,7 @@ public class Options {
 	public static <T extends Enum<T>> T parseEnum(Class<T> type, String option, String value, List<String> problems) {
 		for (var constant : type.getEnumConstants()) {
 			if (constant.name().equalsIgnoreCase(value)) {
-				return Enum.valueOf(type, value);
+				return constant;
 			}
 		}
 
