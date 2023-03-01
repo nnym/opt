@@ -12,7 +12,8 @@ public record MyOptions(
 	@Default("80") @Name(character = 'p') int port,
 	@Default String query,
 	Path path,
-	boolean flag
+	boolean flag,
+	E e
 ) {
 	@Parse static Path path(String option, String value, List<String> problems) {
 		return Path.of(value);
