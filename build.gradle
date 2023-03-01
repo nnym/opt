@@ -1,0 +1,19 @@
+plugins {
+    id("java")
+    id("net.auoeke.gronk").version("4.+")
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation("net.auoeke:reflect")
+
+    testImplementation(platform("org.junit:junit-bom"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+}
+
+test {
+    useJUnitPlatform()
+}
