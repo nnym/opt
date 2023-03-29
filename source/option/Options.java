@@ -14,7 +14,6 @@ import java.util.stream.Stream;
 import static net.auoeke.reflect.Classes.cast;
 
 public class Options {
-
 	public static <T extends Record> Result<T> parse(Class<T> type, String... line) {
 		if (!type.isRecord()) throw new IllegalArgumentException("%s is not a record type".formatted(type));
 
