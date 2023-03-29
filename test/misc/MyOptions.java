@@ -13,9 +13,16 @@ public record MyOptions(
 	@Default String query,
 	Path path,
 	boolean flag,
-	E e
+	@Default("zero,two") Digit[] digits
 ) {
 	@Parse static Path path(String option, String value, List<String> problems) {
 		return Path.of(value);
+	}
+
+	public enum Digit {
+		ZERO,
+		ONE,
+		TWO,
+		THREE
 	}
 }

@@ -3,22 +3,17 @@ package option;
 import net.auoeke.reflect.*;
 
 import java.lang.invoke.WrongMethodTypeException;
+import java.lang.reflect.Array;
+import java.lang.reflect.Field;
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static net.auoeke.reflect.Classes.cast;
+
 public class Options {
-	private static final OptionParser<String> stringParser = (option, value, problems) -> value;
-	private static final OptionParser<Boolean> booleanParser = Options::parseBoolean;
-	private static final OptionParser<Byte> byteParser = Options::parseByte;
-	private static final OptionParser<Character> charParser = Options::parseCharacter;
-	private static final OptionParser<Short> shortParser = Options::parseShort;
-	private static final OptionParser<Integer> intParser = Options::parseInteger;
-	private static final OptionParser<Long> longParser = Options::parseLong;
-	private static final OptionParser<Float> floatParser = Options::parseFloat;
-	private static final OptionParser<Double> doubleParser = Options::parseDouble;
 
 	public static <T extends Record> Result<T> parse(Class<T> type, String... line) {
 		if (!type.isRecord()) throw new IllegalArgumentException("%s is not a record type".formatted(type));
@@ -53,7 +48,7 @@ public class Options {
 					if (names.length == 0 && name.character() == 0) throw new IllegalArgumentException("0 names specified for %s#%s".formatted(type.getName(), field.getName()));
 
 					String ln = null;
-					var sn = name == null ? 0 :  name.character();
+					var sn = name == null ? 0 : name.character();
 
 					for (var value : names) {
 						switch (value.length()) {
@@ -69,28 +64,13 @@ public class Options {
 						}
 					}
 
-					var fieldType = field.getType();
 					var parser = Optional.ofNullable(Methods.of(type, field.getName(), String.class, String.class, List.class))
 						.filter(method -> method.isAnnotationPresent(Parse.class))
 						.map(method -> {
 							var handle = Invoker.unreflect(method);
 							return (OptionParser<?>) (option, value, problems1) -> Invoker.invoke(handle, option, value, problems1);
 						})
-						.orElseGet(() -> Classes.cast(
-							// @formatter:off
-							fieldType == String.class ? stringParser
-							: fieldType == boolean.class && field.isAnnotationPresent(Explicit.class) ? booleanParser
-							: fieldType == byte.class ? byteParser
-							: fieldType == char.class ? charParser
-							: fieldType == short.class ? shortParser
-							: fieldType == int.class ? intParser
-							: fieldType == long.class ? longParser
-							: fieldType == float.class ? floatParser
-							: fieldType == double.class ? doubleParser
-							: Enum.class.isAssignableFrom(fieldType) ? enumParser(Classes.cast(fieldType))
-							: null
-							// @formatter:on
-						));
+						.orElseGet(() -> cast(parser(field, field.getType())));
 					return new WorkingOption<>(field, parser, ln, sn, field.getAnnotation(Default.class));
 				}).toList();
 
@@ -101,7 +81,7 @@ public class Options {
 			var arguments = new ArrayList<String>();
 			WorkingOption lastOption = null;
 
-			for (var iterator = Arrays.asList(line).iterator(); iterator.hasNext(); ) {
+			for (var iterator = Arrays.asList(line).iterator(); iterator.hasNext();) {
 				var argument = iterator.next();
 
 				if (argument.equals("--")) {
@@ -132,7 +112,7 @@ public class Options {
 				} else if (lastOption == null || lastOption.parser == null) {
 					arguments.add(argument);
 				} else {
-					lastOption.value = Classes.cast(lastOption.parser.parse(lastOption.string, argument, problems));
+					lastOption.value = cast(lastOption.parser.parse(lastOption.string, argument, problems));
 					lastOption = null;
 				}
 			}
@@ -157,6 +137,21 @@ public class Options {
 
 			return Invoker.invoke(Invoker.unreflectConstructor(Constructors.canonical(type)), all.stream().map(option -> option.value).toArray());
 		});
+	}
+
+	private static OptionParser<?> parser(Field field, Class<?> type) {
+		return type == String.class ? (option, value, problems) -> value
+			: type == boolean.class && field != null && field.isAnnotationPresent(Explicit.class) ? Options::parseBoolean
+			: type == byte.class ? Options::parseByte
+			: type == char.class ? Options::parseCharacter
+			: type == short.class ? Options::parseShort
+			: type == int.class ? Options::parseInteger
+			: type == long.class ? Options::parseLong
+			: type == float.class ? Options::parseFloat
+			: type == double.class ? Options::parseDouble
+			: type.isArray() ? (option, value, problems) -> parseArray(type.componentType(), option, value, problems)
+			: Enum.class.isAssignableFrom(type) ? (option, value, problems) -> parseEnum(cast(type), option, value, problems)
+			: null;
 	}
 
 	public static Boolean parseBoolean(String option, String value, List<String> problems) {
@@ -243,7 +238,11 @@ public class Options {
 		return null;
 	}
 
-	private static <T extends Enum<T>> OptionParser<T> enumParser(Class<T> type) {
-		return (option, value, problems) -> parseEnum(type, option, value, problems);
+	public static Object parseArray(Class<?> type, String option, String value, List<String> problems) {
+		var parser = parser(null, type);
+		var array = Stream.of(value.split(","))
+			.map(element -> parser.parse(option, element, problems))
+			.toArray(length -> cast(Array.newInstance(Types.box(type), length)));
+		return type.isPrimitive() ? Types.unbox(array) : array;
 	}
 }
