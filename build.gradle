@@ -9,9 +9,7 @@ repositories {
 
 dependencies {
     implementation("net.auoeke:reflect")
-
-    testImplementation(platform("org.junit:junit-bom"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation(platform("org.junit:junit-bom"), "org.junit.jupiter:junit-jupiter")
 }
 
 test {
