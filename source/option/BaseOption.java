@@ -13,6 +13,12 @@ sealed class BaseOption<T> permits Option, WorkingOption {
 		this.fallback = fallback;
 	}
 
+	public String format() {
+		return this.name == null ? this.formatShort()
+			: this.character == 0 ? this.formatLong()
+			: this.formatLong() + ", " + this.formatShort();
+	}
+
 	public String formatLong() {
 		return "--" + this.name;
 	}

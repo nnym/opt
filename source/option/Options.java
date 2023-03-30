@@ -93,7 +93,7 @@ public class Options {
 						return (OptionParser<?>) (option, value, problems1) -> Invoker.invoke(handle, option, value, problems1);
 					})
 					.orElseGet(() -> cast(parser(field.getType(), opt)));
-				return new WorkingOption<>(field, opt, parser, ln, sn, opt.value());
+				return new WorkingOption(field, opt, parser, ln, sn, opt.value());
 			}).toList();
 
 		var byLong = all.stream().filter(option -> Objects.nonNull(option.name)).collect(Collectors.toMap(o -> o.name, Function.identity()));
@@ -143,13 +143,17 @@ public class Options {
 			problems.add("option " + name + " does not exist");
 		}
 
-		options.forEach(option -> {
-			option.set = option.parser == null || option.value != null;
+		all.forEach(option -> {
+			if (options.contains(option)) {
+				option.set = option.parser == null || option.value != null;
 
-			if (!option.set) {
-				problems.add("option " + option.string + " must be followed immediately by an argument but none was found");
-			} else if (option.type == boolean.class && option.value == null) {
-				option.value = true;
+				if (!option.set) {
+					problems.add("option " + option.string + " must be followed immediately by an argument but none was found");
+				} else if (option.type == boolean.class && option.value == null) {
+					option.value = true;
+				}
+			} else if (option.fallback.length == 0) {
+				problems.add("option " + option.format() + " is required but not set");
 			}
 		});
 
