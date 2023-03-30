@@ -3,8 +3,19 @@ plugins {
     id("net.auoeke.gronk").version("4.+")
 }
 
+group("net.auoeke")
+version("0.0.0")
+description("record-based command line options")
+javaVersion(17)
+
 gronk {
     uncheck()
+
+    publish {
+        scm = "https://github.com/nnym/opt"
+        license = ""
+        email = "tjmnkrajyej@gmail.com"
+    }
 }
 
 repositories {
