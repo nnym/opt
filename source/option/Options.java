@@ -153,15 +153,17 @@ public class Options {
 					option.value = true;
 				}
 			} else if (option.fallback.length == 0) {
-				problems.add("option " + option.format() + " is required but not set");
+				if (option.type  == boolean.class) {
+					option.value = true;
+				} else {
+					problems.add("option " + option.format() + " is required but not set");
+				}
+			} else {
+				option.fallBack(problems);
 			}
 		});
 
-		all.stream()
-			.filter(option -> !options.contains(option) && option.fallback.length != 0 || option.type.isPrimitive() && option.value == null)
-			.forEach(option -> option.fallBack(problems));
-
-		return new Result<>(Invoker.invoke(Invoker.unreflectConstructor(Constructors.canonical(type)), all.stream().map(option -> option.value).toArray()), Collections.unmodifiableList(problems));
+		return new Result<>(problems.isEmpty() ? Invoker.invoke(Invoker.unreflectConstructor(Constructors.canonical(type)), all.stream().map(option -> option.value).toArray()) : null, Collections.unmodifiableList(problems));
 	}
 
 	private static OptionParser<?> parser(Class<?> type, Opt opt) {
