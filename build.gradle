@@ -3,6 +3,10 @@ plugins {
     id("net.auoeke.gronk").version("4.+")
 }
 
+gronk {
+    uncheck()
+}
+
 repositories {
     mavenCentral()
 }

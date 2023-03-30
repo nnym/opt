@@ -13,146 +13,158 @@ import java.util.stream.Stream;
 import static net.auoeke.reflect.Classes.cast;
 
 public class Options {
+	private static final @Opt Opt defaultOpt = Fields.of(Options.class, "defaultOpt").getAnnotation(Opt.class);
+
 	public static <T extends Record> Result<T> parse(Class<T> type, String... line) {
 		if (!type.isRecord()) throw new IllegalArgumentException("%s is not a record type".formatted(type));
 
 		Methods.of(type).forEach(method -> {
 			if (method.isAnnotationPresent(Parse.class)) {
-				Supplier<String> format = () -> "@Parse %s::%s%s".formatted(type.getName(), method.getName(), Methods.type(method));
+				var reference = lazyString(() -> "@Parse %s::%s%s".formatted(type.getName(), method.getName(), Methods.type(method)));
 
-				if (Flags.isInstance(method)) throw new WrongMethodTypeException(format.get() + " is not static");
+				if (Flags.isInstance(method)) throw new WrongMethodTypeException(reference + " is not static");
 
 				if (!Types.canCast(0L, method.getParameterTypes(), String.class, String.class, List.class)) {
-					throw new WrongMethodTypeException("parameters of " + format.get() + " do not match (String, String, List<String>)");
+					throw new WrongMethodTypeException("parameters of " + reference + " do not match (String, String, List<String>)");
 				}
 
 				var field = Fields.of(type, method.getName());
 
-				if (field == null || Flags.isStatic(field)) throw new WrongMethodTypeException(format.get() + " does not match a component");
+				if (field == null || Flags.isStatic(field)) throw new WrongMethodTypeException(reference + " does not match a component");
 
 				if (!field.getType().isAssignableFrom(method.getReturnType())) {
-					throw new WrongMethodTypeException("return type of %s does not match %s %s".formatted(format.get(), field.getType().getName(), field.getName()));
+					throw new WrongMethodTypeException("return type of %s does not match %s %s".formatted(reference, field.getType().getName(), field.getName()));
 				}
 			}
 		});
 
-		return Result.build(problems -> {
-			var all = Stream.of(type.getRecordComponents())
-				.map(component -> Fields.of(type, component.getName()))
-				.map(field -> {
-					var opt = field.getAnnotation(Opt.class);
+		var problems = new ArrayList<String>();
+		var all = Stream.of(type.getRecordComponents())
+			.map(component -> Fields.of(type, component.getName()))
+			.map(field -> {
+				var component = lazyString(() -> "%s#%s".formatted(type.getName(), field.getName()));
+				var opt = Objects.requireNonNullElse(field.getAnnotation(Opt.class), defaultOpt);
 
-					if (opt != null && opt.value().length > 1) {
-						throw new IllegalArgumentException("Opt::value length > 1: " + Arrays.toString(opt.value()));
+				if (opt.value().length > 1 && !opt.repeat().aggregate()) {
+					throw new IllegalArgumentException("%s: value.length > 1 but repeat == %s != AGGREGATE(_FLAT)?: %s".formatted(component, opt.repeat(), Arrays.toString(opt.value())));
+				}
+
+				var names = new ArrayList<>(Arrays.asList(opt.name()));
+
+				if (!names.remove("-") && names.stream().noneMatch(name -> (name.length() == 1) == (field.getName().length() == 1))) {
+					names.add(field.getName());
+				}
+
+				if (names.isEmpty()) throw new IllegalArgumentException("0 names specified for " + component);
+
+				if (opt.repeat().aggregate() && !field.getType().isArray()) {
+					throw new IllegalArgumentException("%s is not an array but repeat == %s".formatted(component, opt.repeat()));
+				}
+
+				String ln = null;
+				var sn = '\0';
+
+				for (var iterator = names.listIterator(); iterator.hasNext();) {
+					var name = iterator.next();
+
+					if (iterator.previousIndex() != names.lastIndexOf(name)) {
+						throw new IllegalArgumentException("%s: duplicate name \"%s\"".formatted(component, name));
 					}
 
-					var names = opt == null ? new ArrayList<String>() : new ArrayList<>(Arrays.asList(opt.name()));
-
-					if (!names.remove("-") && names.stream().noneMatch(name -> (name.length() == 1) == (field.getName().length() == 1))) {
-						names.add(field.getName());
-					}
-
-					if (names.isEmpty()) throw new IllegalArgumentException("0 names specified for %s#%s".formatted(type.getName(), field.getName()));
-
-					names.stream().filter(name -> names.indexOf(name) != names.lastIndexOf(name)).forEach(name -> {
-						throw new IllegalArgumentException("duplicate name \"%s\"".formatted(name));
-					});
-
-					String ln = null;
-					var sn = '\0';
-
-					for (var value : names) {
-						switch (value.length()) {
-							case 0 -> throw new IllegalArgumentException("empty name specified for %s#%s".formatted(type.getName(), field.getName()));
-							case 1 -> {
-								if (sn != 0) throw new IllegalArgumentException("%s#%s has more than 1 short name".formatted(type.getName(), field.getName()));
-								if (0 == (sn = value.charAt(0))) throw new IllegalArgumentException("illegal short name '\\0' (null)");
-							}
-							default -> {
-								if (ln != null) throw new IllegalArgumentException("%s#%s has more than 1 long name".formatted(type.getName(), field.getName()));
-								ln = value;
-							}
+					switch (name.length()) {
+						case 0 -> throw new IllegalArgumentException("empty name specified for " + component);
+						case 1 -> {
+							if (sn != 0) throw new IllegalArgumentException(component + " has more than 1 short name");
+							if (0 == (sn = name.charAt(0))) throw new IllegalArgumentException("illegal short name '\\0' (null)");
+						}
+						default -> {
+							if (ln != null) throw new IllegalArgumentException(component + " has more than 1 long name");
+							ln = name;
 						}
 					}
+				}
 
-					var parser = Optional.ofNullable(Methods.of(type, field.getName(), String.class, String.class, List.class))
-						.filter(method -> method.isAnnotationPresent(Parse.class))
-						.map(method -> {
-							var handle = Invoker.unreflect(method);
-							return (OptionParser<?>) (option, value, problems1) -> Invoker.invoke(handle, option, value, problems1);
-						})
-						.orElseGet(() -> cast(parser(field.getType(), opt)));
-					return new WorkingOption<>(field, parser, ln, sn, opt == null || opt.value().length == 0 ? null : opt.value()[0]);
-				}).toList();
+				var parser = Optional.ofNullable(Methods.of(type, field.getName(), String.class, String.class, List.class))
+					.filter(method -> method.isAnnotationPresent(Parse.class))
+					.map(method -> {
+						var handle = Invoker.unreflect(method);
+						return (OptionParser<?>) (option, value, problems1) -> Invoker.invoke(handle, option, value, problems1);
+					})
+					.orElseGet(() -> cast(parser(field.getType(), opt)));
+				return new WorkingOption<>(field, opt, parser, ln, sn, opt.value());
+			}).toList();
 
-			var byLong = all.stream().filter(option -> Objects.nonNull(option.name)).collect(Collectors.toMap(o -> o.name, Function.identity()));
-			var byShort = all.stream().filter(o -> o.character != 0).collect(Collectors.toMap(o -> o.character, Function.identity()));
-			var options = new LinkedHashSet<WorkingOption>();
-			var notFound = new LinkedHashSet<String>();
-			var arguments = new ArrayList<String>();
-			WorkingOption lastOption = null;
+		var byLong = all.stream().filter(option -> Objects.nonNull(option.name)).collect(Collectors.toMap(o -> o.name, Function.identity()));
+		var byShort = all.stream().filter(o -> o.character != 0).collect(Collectors.toMap(o -> o.character, Function.identity()));
+		var options = new LinkedHashSet<WorkingOption>();
+		var notFound = new LinkedHashSet<String>();
+		var arguments = new ArrayList<String>();
+		WorkingOption lastOption = null;
 
-			for (var iterator = Arrays.asList(line).iterator(); iterator.hasNext();) {
-				var argument = iterator.next();
+		for (var iterator = Arrays.asList(line).iterator(); iterator.hasNext();) {
+			var argument = iterator.next();
 
-				if (argument.equals("--")) {
-					iterator.forEachRemaining(arguments::add);
-				} else if (argument.startsWith("--")) {
-					lastOption = byLong.get(argument.substring(2));
+			if (argument.equals("--")) {
+				iterator.forEachRemaining(arguments::add);
+			} else if (argument.startsWith("--")) {
+				lastOption = byLong.get(argument.substring(2));
 
-					if (lastOption == null) {
-						notFound.add(argument);
-					} else {
-						lastOption.string = argument;
-						options.add(lastOption);
-					}
-				} else if (argument.startsWith("-") && argument.length() > 1) {
-					var names = argument.substring(1).toCharArray();
-					lastOption = byShort.get(names[names.length - 1]);
-
-					for (var name : names) {
-						var option = byShort.get(name);
-
-						if (option == null) {
-							notFound.add("-" + name);
-						} else {
-							option.string = option.formatShort();
-							options.add(option);
-						}
-					}
-				} else if (lastOption == null || lastOption.parser == null) {
-					arguments.add(argument);
+				if (lastOption == null) {
+					notFound.add(argument);
 				} else {
-					lastOption.value = cast(lastOption.parser.parse(lastOption.string, argument, problems));
-					lastOption = null;
+					lastOption.string = argument;
+					options.add(lastOption);
 				}
-			}
+			} else if (argument.startsWith("-") && argument.length() > 1) {
+				var names = argument.substring(1).toCharArray();
+				lastOption = byShort.get(names[names.length - 1]);
 
-			for (var name : notFound) {
-				problems.add("option " + name + " does not exist");
-			}
+				for (var name : names) {
+					var option = byShort.get(name);
 
-			options.forEach(option -> {
-				option.set = option.parser == null || option.value != null;
-
-				if (!option.set) {
-					problems.add("option " + option.string + " must be followed immediately by an argument but none was found");
-				} else if (option.type == boolean.class) {
-					option.value = true;
+					if (option == null) {
+						notFound.add("-" + name);
+					} else {
+						option.string = option.formatShort();
+						options.add(option);
+					}
 				}
-			});
+			} else if (lastOption == null || lastOption.parser == null) {
+				arguments.add(argument);
+			} else {
+				lastOption.set(argument, problems);
+				lastOption = null;
+			}
+		}
 
-			all.stream()
-				.filter(option -> !options.contains(option) && option.fallback != null || option.type.isPrimitive() && option.value == null)
-				.forEach(option -> option.fallBack(problems));
+		for (var name : notFound) {
+			problems.add("option " + name + " does not exist");
+		}
 
-			return Invoker.invoke(Invoker.unreflectConstructor(Constructors.canonical(type)), all.stream().map(option -> option.value).toArray());
+		options.forEach(option -> {
+			option.set = option.parser == null || option.value != null;
+
+			if (!option.set) {
+				problems.add("option " + option.string + " must be followed immediately by an argument but none was found");
+			} else if (option.type == boolean.class && option.value == null) {
+				option.value = true;
+			}
 		});
+
+		all.stream()
+			.filter(option -> !options.contains(option) && option.fallback.length != 0 || option.type.isPrimitive() && option.value == null)
+			.forEach(option -> option.fallBack(problems));
+
+		return new Result<>(Invoker.invoke(Invoker.unreflectConstructor(Constructors.canonical(type)), all.stream().map(option -> option.value).toArray()), Collections.unmodifiableList(problems));
 	}
 
 	private static OptionParser<?> parser(Class<?> type, Opt opt) {
+		if (opt != null && opt.repeat() == Opt.Repeat.AGGREGATE) {
+			type = type.componentType();
+		}
+
 		return type == String.class ? (option, value, problems) -> value
-			: type == boolean.class && opt != null && opt.explicit() ? Options::parseBoolean
+			: type == boolean.class && (opt == null || opt.explicit()) ? Options::parseBoolean
 			: type == byte.class ? Options::parseByte
 			: type == char.class ? Options::parseCharacter
 			: type == short.class ? Options::parseShort
@@ -255,5 +267,13 @@ public class Options {
 			.map(element -> parser.parse(option, element, problems))
 			.toArray(length -> cast(Array.newInstance(Types.box(type), length)));
 		return type.isPrimitive() ? Types.unbox(array) : array;
+	}
+
+	private static Object lazyString(Supplier<String> supplier) {
+		return new Object() {
+			@Override public String toString() {
+				return supplier.get();
+			}
+		};
 	}
 }
