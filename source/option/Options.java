@@ -100,14 +100,14 @@ public class Options {
 		var byShort = all.stream().filter(o -> o.character != 0).collect(Collectors.toMap(o -> o.character, Function.identity()));
 		var options = new LinkedHashSet<WorkingOption>();
 		var notFound = new LinkedHashSet<String>();
-		var arguments = new ArrayList<String>();
+		var operands = new ArrayList<String>();
 		WorkingOption lastOption = null;
 
 		for (var iterator = Arrays.asList(line).iterator(); iterator.hasNext();) {
 			var argument = iterator.next();
 
 			if (argument.equals("--")) {
-				iterator.forEachRemaining(arguments::add);
+				iterator.forEachRemaining(operands::add);
 			} else if (argument.startsWith("--")) {
 				lastOption = byLong.get(argument.substring(2));
 
@@ -132,7 +132,7 @@ public class Options {
 					}
 				}
 			} else if (lastOption == null || lastOption.parser == null) {
-				arguments.add(argument);
+				operands.add(argument);
 			} else {
 				lastOption.set(argument, problems);
 				lastOption = null;
