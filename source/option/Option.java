@@ -1,6 +1,6 @@
 package option;
 
-public final class Option<T> extends BaseOption<T> {
+final class Option<T> extends BaseOption<T> {
 	public final String string;
 	public final T value;
 
