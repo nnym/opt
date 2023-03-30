@@ -4,7 +4,6 @@ import net.auoeke.reflect.*;
 
 import java.lang.invoke.WrongMethodTypeException;
 import java.lang.reflect.Array;
-import java.lang.reflect.Field;
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -41,20 +40,33 @@ public class Options {
 			var all = Stream.of(type.getRecordComponents())
 				.map(component -> Fields.of(type, component.getName()))
 				.map(field -> {
-					var name = field.getAnnotation(Name.class);
-					var names = name == null || name.value().length == 0 && name.character() != 0 ? new String[]{field.getName()} : name.value();
+					var opt = field.getAnnotation(Opt.class);
 
-					if (names.length == 0 && name.character() == 0) throw new IllegalArgumentException("0 names specified for %s#%s".formatted(type.getName(), field.getName()));
+					if (opt != null && opt.value().length > 1) {
+						throw new IllegalArgumentException("Opt::value length > 1: " + Arrays.toString(opt.value()));
+					}
+
+					var names = opt == null ? new ArrayList<String>() : new ArrayList<>(Arrays.asList(opt.name()));
+
+					if (!names.remove("-") && names.stream().noneMatch(name -> (name.length() == 1) == (field.getName().length() == 1))) {
+						names.add(field.getName());
+					}
+
+					if (names.isEmpty()) throw new IllegalArgumentException("0 names specified for %s#%s".formatted(type.getName(), field.getName()));
+
+					names.stream().filter(name -> names.indexOf(name) != names.lastIndexOf(name)).forEach(name -> {
+						throw new IllegalArgumentException("duplicate name \"%s\"".formatted(name));
+					});
 
 					String ln = null;
-					var sn = name == null ? 0 : name.character();
+					var sn = '\0';
 
 					for (var value : names) {
 						switch (value.length()) {
 							case 0 -> throw new IllegalArgumentException("empty name specified for %s#%s".formatted(type.getName(), field.getName()));
 							case 1 -> {
 								if (sn != 0) throw new IllegalArgumentException("%s#%s has more than 1 short name".formatted(type.getName(), field.getName()));
-								sn = value.charAt(0);
+								if (0 == (sn = value.charAt(0))) throw new IllegalArgumentException("illegal short name '\\0' (null)");
 							}
 							default -> {
 								if (ln != null) throw new IllegalArgumentException("%s#%s has more than 1 long name".formatted(type.getName(), field.getName()));
@@ -69,8 +81,8 @@ public class Options {
 							var handle = Invoker.unreflect(method);
 							return (OptionParser<?>) (option, value, problems1) -> Invoker.invoke(handle, option, value, problems1);
 						})
-						.orElseGet(() -> cast(parser(field, field.getType())));
-					return new WorkingOption<>(field, parser, ln, sn, field.getAnnotation(Default.class));
+						.orElseGet(() -> cast(parser(field.getType(), opt)));
+					return new WorkingOption<>(field, parser, ln, sn, opt == null || opt.value().length == 0 ? null : opt.value()[0]);
 				}).toList();
 
 			var byLong = all.stream().filter(option -> Objects.nonNull(option.name)).collect(Collectors.toMap(o -> o.name, Function.identity()));
@@ -138,9 +150,9 @@ public class Options {
 		});
 	}
 
-	private static OptionParser<?> parser(Field field, Class<?> type) {
+	private static OptionParser<?> parser(Class<?> type, Opt opt) {
 		return type == String.class ? (option, value, problems) -> value
-			: type == boolean.class && field != null && field.isAnnotationPresent(Explicit.class) ? Options::parseBoolean
+			: type == boolean.class && opt != null && opt.explicit() ? Options::parseBoolean
 			: type == byte.class ? Options::parseByte
 			: type == char.class ? Options::parseCharacter
 			: type == short.class ? Options::parseShort
@@ -238,7 +250,7 @@ public class Options {
 	}
 
 	public static Object parseArray(Class<?> type, String option, String value, List<String> problems) {
-		var parser = parser(null, type);
+		var parser = parser(type, null);
 		var array = Stream.of(value.split(","))
 			.map(element -> parser.parse(option, element, problems))
 			.toArray(length -> cast(Array.newInstance(Types.box(type), length)));
