@@ -2,8 +2,10 @@ package option;
 
 import net.auoeke.reflect.*;
 
+import java.io.File;
 import java.lang.invoke.WrongMethodTypeException;
 import java.lang.reflect.Array;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -174,6 +176,8 @@ public class Options {
 			: type == double.class ? Options::parseDouble
 			: type.isArray() ? (option, value, problems) -> parseArray(type.componentType(), option, value, problems)
 			: Enum.class.isAssignableFrom(type) ? (option, value, problems) -> parseEnum(cast(type), option, value, problems)
+			: type == File.class ? Options::parseFile
+			: type == Path.class ? Options::parsePath
 			: null;
 	}
 
@@ -267,6 +271,19 @@ public class Options {
 			.map(element -> parser.parse(option, element, problems))
 			.toArray(length -> cast(Array.newInstance(Types.box(type), length)));
 		return type.isPrimitive() ? Types.unbox(array) : array;
+	}
+
+	public static File parseFile(String option, String value, List<String> problems) {
+		return new File(value);
+	}
+
+	public static Path parsePath(String option, String value, List<String> problems) {
+		try {
+			return Path.of(value);
+		} catch (Exception exception) {
+			problems.add("invalid path \"%s\" for %s".formatted(value, option));
+			return null;
+		}
 	}
 
 	private static Object lazyString(Supplier<String> supplier) {

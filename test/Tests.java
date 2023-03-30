@@ -6,15 +6,16 @@ import org.junit.platform.commons.annotation.Testable;
 
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.List;
 
 @Testable
 public class Tests {
 	@Test void test() {
-		var options = Options.parse(MyOptions.class, "--port 0xFFFF -h example.net --path /bin/bash --flag -d zero -d one -d three".split(" ")).value();
+		var options = Options.parse(MyOptions.class, "--port 0xFFFF -h example.net -p /bin/bash,../foo.bar --flag -d zero -d one -d three".split(" ")).value();
 
 		assert options.port() == 0xFFFF
 			&& options.hostname().equals("example.net")
-			&& options.path().equals(Path.of("/bin/bash"))
+			&& options.paths().equals(List.of(Path.of("/bin/bash"), Path.of("../foo.bar")))
 			&& options.flag()
 			&& Arrays.equals(options.digitsA(), new Digit[]{Digit.ZERO, Digit.TWO})
 			&& Arrays.equals(options.digitsB(), new Digit[]{Digit.ONE, Digit.TWO})
